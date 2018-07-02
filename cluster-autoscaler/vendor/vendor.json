@@ -1,0 +1,14 @@
+{
+	"comment": "",
+	"ignore": "",
+	"package": [
+		{
+			"checksumSHA1": "s91fQOB7mkU1ehYoYdfjjL/he7Y=",
+			"origin": "k8s.io/autoscaler/cluster-autoscaler/vendor/cloud.tencent.com/tencent-cloudprovider/component",
+			"path": "cloud.tencent.com/tencent-cloudprovider/component",
+			"revision": "682def320c55111d8d49d7819d4ca6ffb5dfc40f",
+			"revisionTime": "2018-03-28T20:05:38Z"
+		}
+	],
+	"rootPath": "k8s.io/autoscaler/cluster-autoscaler"
+}

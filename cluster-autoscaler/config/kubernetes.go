@@ -33,7 +33,7 @@ import (
 const (
 	defaultUseServiceAccount  = false
 	defaultServiceAccountFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	defaultInClusterConfig    = true
+	defaultInClusterConfig    = false
 )
 
 func getConfigOverrides(uri *url.URL) (*kube_client_cmd.ConfigOverrides, error) {

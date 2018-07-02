@@ -314,7 +314,7 @@ func run(healthCheck *metrics.HealthCheck) {
 
 func main() {
 	leaderElection := defaultLeaderElectionConfiguration()
-	leaderElection.LeaderElect = true
+	//leaderElection.LeaderElect = true
 
 	leaderelectionconfig.BindFlags(&leaderElection, pflag.CommandLine)
 	kube_flag.InitFlags()

@@ -36,6 +36,7 @@ import (
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/golang/glog"
+	"strings"
 )
 
 const (
@@ -321,7 +322,7 @@ func (csr *ClusterStateRegistry) IsNodeGroupHealthy(nodeGroupName string) bool {
 		if acceptable.CurrentTarget == 0 || (acceptable.MinNodes == 0 && acceptable.CurrentTarget > 0) {
 			return true
 		}
-		glog.Warningf("Failed to find readiness information for %v", nodeGroupName)
+		glog.Warningf("Failed to find readiness information for %v, accept:%#v, readiness:%#v", nodeGroupName, acceptable, readiness)
 		return false
 	}
 
@@ -870,7 +871,12 @@ func (csr *ClusterStateRegistry) GetUpcomingNodes() map[string]int {
 func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProvider cloudprovider.CloudProvider, time time.Time) ([]UnregisteredNode, error) {
 	registered := sets.NewString()
 	for _, node := range allNodes {
-		registered.Insert(node.Spec.ProviderID)
+		if cloudProvider.Name() == "qcloud" {
+			insId := strings.Split(node.Spec.ProviderID, "/")[4]
+			registered.Insert(insId)
+		}else {
+			registered.Insert(node.Spec.ProviderID)
+		}
 	}
 	notRegistered := make([]UnregisteredNode, 0)
 	for _, nodeGroup := range cloudProvider.NodeGroups() {
@@ -880,6 +886,9 @@ func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProvider cloudprovider.C
 		}
 		for _, node := range nodes {
 			if !registered.Has(node) {
+				if cloudProvider.Name() == "qcloud" {
+					node = fmt.Sprintf("qcloud:///zoneid/%s", node)
+				}
 				notRegistered = append(notRegistered, UnregisteredNode{
 					Node: &apiv1.Node{
 						ObjectMeta: metav1.ObjectMeta{
