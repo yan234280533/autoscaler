@@ -22,9 +22,10 @@ import (
 	"strings"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
-	apiv1 "k8s.io/kubernetes/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
 )
 
@@ -37,25 +38,27 @@ const (
 type qcloudCloudProvider struct {
 	qcloudManager *QcloudManager
 	asgs       []*Asg
+	resourceLimiter *cloudprovider.ResourceLimiter
 }
 
 // BuildQcloudCloudProvider builds CloudProvider implementation for QCLOUD.
-func BuildQcloudCloudProvider(qcloudManager *QcloudManager, discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (cloudprovider.CloudProvider, error) {
+func BuildQcloudCloudProvider(qcloudManager *QcloudManager, discoveryOpts cloudprovider.NodeGroupDiscoveryOptions, resourceLimiter *cloudprovider.ResourceLimiter) (cloudprovider.CloudProvider, error) {
 	if err := discoveryOpts.Validate(); err != nil {
 		return nil, fmt.Errorf("Failed to build an qcloud cloud provider: %v", err)
 	}
 	if discoveryOpts.StaticDiscoverySpecified() {
-		return buildStaticallyDiscoveringProvider(qcloudManager, discoveryOpts.NodeGroupSpecs)
+		return buildStaticallyDiscoveringProvider(qcloudManager, discoveryOpts.NodeGroupSpecs, resourceLimiter)
 	}
 
 	return nil, fmt.Errorf("Failed to build an qcloud cloud provider: Either node group specs or node group auto discovery spec must be specified")
 }
 
 
-func buildStaticallyDiscoveringProvider(qcloudManager *QcloudManager, specs []string) (*qcloudCloudProvider, error) {
+func buildStaticallyDiscoveringProvider(qcloudManager *QcloudManager, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*qcloudCloudProvider, error) {
 	qcloud := &qcloudCloudProvider{
 		qcloudManager: qcloudManager,
 		asgs:       make([]*Asg, 0),
+		resourceLimiter:resourceLimiter,
 	}
 	for _, spec := range specs {
 		if err := qcloud.addNodeGroup(spec); err != nil {
@@ -73,6 +76,11 @@ func (qcloud *qcloudCloudProvider) addNodeGroup(spec string) error {
 		return err
 	}
 	qcloud.addAsg(asg)
+	return nil
+}
+
+func (qcloud *qcloudCloudProvider) Cleanup() error {
+	qcloud.qcloudManager.Cleanup()
 	return nil
 }
 
@@ -109,6 +117,28 @@ func (qcloud *qcloudCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprov
 // Pricing returns pricing model for this cloud provider or error if not available.
 func (qcloud *qcloudCloudProvider) Pricing() (cloudprovider.PricingModel, errors.AutoscalerError) {
 	return nil, cloudprovider.ErrNotImplemented
+}
+
+// GetAvailableMachineTypes get all machine types that can be requested from the cloud provider.
+func (qcloud *qcloudCloudProvider) GetAvailableMachineTypes() ([]string, error) {
+	return []string{}, nil
+}
+
+// NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
+// created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
+func (qcloud *qcloudCloudProvider) NewNodeGroup(machineType string, labels map[string]string, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
+	return nil, cloudprovider.ErrNotImplemented
+}
+
+// GetResourceLimiter returns struct containing limits (max, min) for resources (cores, memory etc.).
+func (qcloud *qcloudCloudProvider) GetResourceLimiter() (*cloudprovider.ResourceLimiter, error) {
+	return qcloud.resourceLimiter, nil
+}
+
+// Refresh is called before every main loop and can be used to dynamically update cloud provider state.
+// In particular the list of node groups returned by NodeGroups can change as a result of CloudProvider.Refresh().
+func (qcloud *qcloudCloudProvider) Refresh() error {
+	return nil
 }
 
 // QcloudRef contains a reference to some entity in QCLOUD/GKE world.
@@ -212,6 +242,28 @@ func (asg *Asg) Belongs(node *apiv1.Node) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// Exist checks if the node group really exists on the cloud provider side. Allows to tell the
+// theoretical node group from the real one.
+func (asg *Asg) Exist() bool {
+	return true
+}
+
+// Create creates the node group on the cloud provider side.
+func (asg *Asg) Create() error {
+	return cloudprovider.ErrAlreadyExist
+}
+
+// Delete deletes the node group on the cloud provider side.
+// This will be executed only for autoprovisioned node groups, once their size drops to 0.
+func (asg *Asg) Delete() error {
+	return cloudprovider.ErrNotImplemented
+}
+
+// Autoprovisioned returns true if the node group is autoprovisioned.
+func (asg *Asg) Autoprovisioned() bool {
+	return false
 }
 
 // DeleteNodes deletes the nodes from the group.

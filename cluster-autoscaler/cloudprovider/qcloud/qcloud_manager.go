@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	apiv1 "k8s.io/kubernetes/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"math/rand"
@@ -162,6 +162,9 @@ func (m *QcloudManager) SetAsgSize(asg *Asg, size int64) error {
 		return err
 	}
 	return nil
+}
+
+func (m *QcloudManager) Cleanup() {
 }
 
 // DeleteInstances deletes the given instances. All instances must be controlled by the same ASG.
