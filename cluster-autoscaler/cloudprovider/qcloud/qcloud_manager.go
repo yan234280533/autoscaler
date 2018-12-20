@@ -35,6 +35,7 @@ import (
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"math/rand"
+	ini "github.com/go-ini/ini"
 )
 
 type asgInformation struct {
@@ -51,6 +52,7 @@ type QcloudManager struct {
 type Config struct {
 	Region string `json:"region"`
 	Zone   string `json:"zone"`
+	ClusterId   string
 }
 
 const (
@@ -69,6 +71,17 @@ func readConfig(cfg io.Reader) error {
 		glog.Errorf("Couldn't parse config: %v", err)
 		return err
 	}
+
+	clsinfo, err := ini.Load("/etc/kubernetes/config")
+	if err != nil {
+		return err
+	}
+
+	section := clsinfo.Section("")
+	if !section.Haskey("KUBE_CLUSTER") {
+		return fmt.Errorf("KUBE_CLUSTER not found")
+	}
+	config.ClusterId = section.Key("KUBE_CLUSTER").String()
 
 	return nil
 }
@@ -194,6 +207,7 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	params := &autoscaling.DetachInstanceArgs{
 		ScalingGroupId:commonAsg.Name,
 		InstanceIds:ins,
+		KeepInstance:1,
 	}
 	resp, err := m.service.Client.DetachInstance(params)
 	if err != nil {
@@ -201,7 +215,79 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	}
 	glog.V(4).Infof("res:%#v", resp.Response)
 
+	//check activity
+	err = m.EnsureAS(commonAsg.Name, resp.Data.ScalingActivityId)
+	if err != nil {
+		return err
+	}
+
+	//ccs delete node
+	delNodePara := ccs.DeleteClusterInstancesReq{ClusterId:config.ClusterId, InstanceIds:ins}
+	err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (m *QcloudManager) EnsureAS(scalingGroupId, scalingActivityId string) error {
+	if scalingActivityId == "" {
+		return nil
+	}
+	checker := func(r interface{}, e error) bool {
+		if e != nil {
+			return false
+		}
+		if r.(int) == 0 {
+			return false
+		}
+		if r.(int) == 1 {
+			return false
+		}
+		return true
+	}
+	do := func() (interface{}, error) {
+		return m.service.Client.DescribeScalingActivityById(scalingGroupId, scalingActivityId)
+	}
+
+	status, err, isTimeout := RetryDo(do, checker, 1200, 2)
+	if err != nil {
+		return fmt.Errorf("EnsureAS get scalingActivityId:%s failed:%v", scalingActivityId, err)
+	}
+
+	if isTimeout {
+		return fmt.Errorf("EnsureAS scalingActivityId:%s timeout", scalingActivityId)
+	}
+
+	if status.(int) != 2 {
+		return fmt.Errorf("EnsureAS scalingActivityId:%s fail", scalingActivityId)
+	}
+
+	return nil
+}
+
+func RetryDo(op func() (interface{}, error), checker func(interface{}, error) bool, timeout uint64, interval uint64) (ret interface{}, err error, isTimeout bool) {
+	isTimeout = false
+	var tm <-chan time.Time
+	tm = time.After(time.Duration(timeout) * time.Second)
+
+	times := 0
+	for {
+		times = times + 1
+		select {
+		case <-tm:
+			isTimeout = true
+			return
+		default:
+		}
+		ret, err = op()
+		if checker(ret, err) {
+			return
+		}
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
+	return
 }
 
 // GetAsgNodes returns Asg nodes.
