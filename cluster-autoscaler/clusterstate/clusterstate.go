@@ -508,6 +508,10 @@ func (csr *ClusterStateRegistry) updateReadinessStats(currentTime time.Time) {
 			glog.Warningf("Failed to get nodegroup for %s: %v", unregistered.Node.Name, errNg)
 			continue
 		}
+		if nodeGroup == nil {
+			glog.Warningf("node:%s not found asg group", unregistered.Node.Name)
+			continue
+		}
 		perNgCopy := perNodeGroup[nodeGroup.Id()]
 		if unregistered.UnregisteredSince.Add(csr.config.MaxNodeProvisionTime).Before(currentTime) {
 			perNgCopy.LongUnregistered += 1
