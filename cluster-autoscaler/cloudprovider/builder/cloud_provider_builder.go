@@ -18,6 +18,7 @@ package builder
 
 import (
 	"io"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/qcloud"
 	"os"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
@@ -219,3 +220,25 @@ func buildKubemark(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDis
 	}
 	return provider
 }
+
+func (b CloudProviderBuilder) buildQCLOUD(do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
+	var qcloudManager *qcloud.QcloudManager
+	var qcloudError error
+
+	config, fileErr := os.Open(b.cloudConfig)
+	if fileErr != nil {
+		glog.Fatalf("Couldn't open cloud provider configuration %s: %#v", b.cloudConfig, fileErr)
+	}
+	defer config.Close()
+	qcloudManager, qcloudError = qcloud.CreateQcloudManager(config)
+	if qcloudError != nil {
+		glog.Fatalf("Failed to create QCLOUD Manager: %v", qcloudError)
+	}
+
+	cloudProvider, err := qcloud.BuildQcloudCloudProvider(qcloudManager, do, rl)
+	if err != nil {
+		glog.Fatalf("Failed to create QCLOUD cloud provider: %v", err)
+	}
+	return cloudProvider
+}
+
