@@ -77,6 +77,8 @@ func NewCloudProvider(opts config.AutoscalingOptions) cloudprovider.CloudProvide
 		return buildAzure(opts, do, rl)
 	case kubemark.ProviderName:
 		return buildKubemark(opts, do, rl)
+	case qcloud.ProviderName:
+		return buildQCLOUD(opts, do, rl)
 	case "":
 		// Ideally this would be an error, but several unit tests of the
 		// StaticAutoscaler depend on this behaviour.
@@ -221,13 +223,13 @@ func buildKubemark(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDis
 	return provider
 }
 
-func (b CloudProviderBuilder) buildQCLOUD(do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
+func buildQCLOUD(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
 	var qcloudManager *qcloud.QcloudManager
 	var qcloudError error
 
-	config, fileErr := os.Open(b.cloudConfig)
+	config, fileErr := os.Open("config")
 	if fileErr != nil {
-		glog.Fatalf("Couldn't open cloud provider configuration %s: %#v", b.cloudConfig, fileErr)
+		glog.Fatalf("Couldn't open cloud provider configuration %s: %#v","config", fileErr)
 	}
 	defer config.Close()
 	qcloudManager, qcloudError = qcloud.CreateQcloudManager(config)

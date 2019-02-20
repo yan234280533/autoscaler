@@ -26,7 +26,8 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 const (
@@ -121,10 +122,11 @@ func (qcloud *qcloudCloudProvider) GetAvailableMachineTypes() ([]string, error) 
 	return []string{}, nil
 }
 
+
 // NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 // created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
 func (qcloud *qcloudCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
-extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
+	taints []apiv1.Taint, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrNotImplemented
 }
 
@@ -249,8 +251,8 @@ func (asg *Asg) Exist() bool {
 }
 
 // Create creates the node group on the cloud provider side.
-func (asg *Asg) Create() error {
-	return cloudprovider.ErrAlreadyExist
+func (asg *Asg) Create() (cloudprovider.NodeGroup, error) {
+	return nil, cloudprovider.ErrAlreadyExist
 }
 
 // Delete deletes the node group on the cloud provider side.
