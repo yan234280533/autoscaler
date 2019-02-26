@@ -227,9 +227,9 @@ func buildQCLOUD(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDisco
 	var qcloudManager *qcloud.QcloudManager
 	var qcloudError error
 
-	config, fileErr := os.Open("config")
+	config, fileErr := os.Open(opts.CloudConfig)
 	if fileErr != nil {
-		glog.Fatalf("Couldn't open cloud provider configuration %s: %#v","config", fileErr)
+		glog.Fatalf("Couldn't open cloud provider configuration %s: %#v",opts.CloudConfig, fileErr)
 	}
 	defer config.Close()
 	qcloudManager, qcloudError = qcloud.CreateQcloudManager(config)
