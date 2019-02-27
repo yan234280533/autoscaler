@@ -403,9 +403,15 @@ func (sd *ScaleDown) UpdateUnneededNodes(
 		glog.V(4).Infof("Node %s - utilization %f", node.Name, utilization)
 		utilizationMap[node.Name] = utilization
 
-		if utilization >= sd.context.ScaleDownUtilizationThreshold {
-			glog.V(4).Infof("Node %s is not suitable for removal - utilization too big (%f)", node.Name, utilization)
-			continue
+
+		if (math.Abs(utilization)< math.SmallestNonzeroFloat32) && (math.Abs(sd.context.ScaleDownUtilizationThreshold)< math.SmallestNonzeroFloat32){
+			glog.V(4).Infof("Node %s is suitable for removal - utilization (%f) equal zero and scaleDownUtilizationThreshold (%f) equal zero",
+				node.Name, utilization,sd.context.ScaleDownUtilizationThreshold)
+		}else{
+			if utilization >= sd.context.ScaleDownUtilizationThreshold {
+				glog.V(4).Infof("Node1 %s is not suitable for removal - utilization too big (%f)", node.Name, utilization)
+				continue
+			}
 		}
 		currentlyUnneededNodes = append(currentlyUnneededNodes, node)
 	}
