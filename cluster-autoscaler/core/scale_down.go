@@ -395,7 +395,7 @@ func (sd *ScaleDown) UpdateUnneededNodes(
 			continue
 		}
 
-		utilInfo, err := simulator.CalculateUtilization(node, nodeInfo, sd.context.IgnoreDaemonSetsUtilization, sd.context.IgnoreMirrorPodsUtilization)
+		utilization, err := simulator.CalculateUtilization(node, nodeInfo, sd.context.IgnoreDaemonSetsUtilization, sd.context.IgnoreMirrorPodsUtilization)
 
 		if err != nil {
 			glog.Warningf("Failed to calculate utilization for %s: %v", node.Name, err)

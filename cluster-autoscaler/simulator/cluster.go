@@ -144,7 +144,7 @@ func FindEmptyNodesToRemove(candidates []*apiv1.Node, pods []*apiv1.Pod) []*apiv
 // CalculateUtilization calculates utilization of a node, defined as maximum of (cpu, memory) utilization.
 // Per resource utilization is the sum of requests for it divided by allocatable. It also returns the individual
 // cpu and memory utilization.
-func CalculateUtilization(node *apiv1.Node, nodeInfo *schedulercache.NodeInfo, skipDaemonSetPods, skipMirrorPods bool) (utilInfo UtilizationInfo, err error) {
+func CalculateUtilization(node *apiv1.Node, nodeInfo *schedulercache.NodeInfo, skipDaemonSetPods, skipMirrorPods bool) (float64, error) {
 	cpu, err := calculateUtilizationOfResource(node, nodeInfo, apiv1.ResourceCPU, skipDaemonSetPods, skipMirrorPods)
 
 	if err != nil {
