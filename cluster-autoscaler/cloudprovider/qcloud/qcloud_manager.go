@@ -20,22 +20,24 @@ package qcloud
 import (
 	"fmt"
 	"io"
+	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 	"time"
 
-	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
-	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
-	"github.com/dbdd4us/qcloudapi-sdk-go/common"
-	"github.com/golang/glog"
 	"cloud.tencent.com/tencent-cloudprovider/credential"
 	"encoding/json"
+	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
+	"github.com/dbdd4us/qcloudapi-sdk-go/common"
+	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
+	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/go-ini/ini"
 	apiv1 "k8s.io/api/core/v1"
-	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"math/rand"
-	ini "github.com/go-ini/ini"
 )
 
 type asgInformation struct {
@@ -313,6 +315,7 @@ type asgTemplate struct {
 	Zone         string
 	Cpu          int
 	Mem          int
+	Gpu          int
 	Label        map[string]string
 }
 
@@ -322,7 +325,7 @@ func (m *QcloudManager) getAsgTemplate(name string) (*asgTemplate, error) {
 		return nil, err
 	}
 
-	cpu, mem, err := m.service.getInstanceTypeByLCName(asg.ScalingConfigurationId)
+	cpu, mem, gpu,err := m.service.getInstanceTypeByLCName(asg.ScalingConfigurationId)
 	if err != nil {
 		return nil, err
 	}
@@ -344,12 +347,14 @@ func (m *QcloudManager) getAsgTemplate(name string) (*asgTemplate, error) {
 		glog.Warningf("Found multiple availability zones, using %s\n", az)
 	}
 
+
 	return &asgTemplate{
 		InstanceType: "QCLOUD",
 		Region:       config.Region,
 		Zone:         az,
 		Cpu:cpu,
 		Mem:mem,
+		Gpu:gpu,
 		Label:asgLabel.Label,
 	}, nil
 }
@@ -372,6 +377,11 @@ func (m *QcloudManager) buildNodeFromTemplate(asg *Asg, template *asgTemplate) (
 	node.Status.Capacity[apiv1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
 	node.Status.Capacity[apiv1.ResourceCPU] = *resource.NewQuantity(int64(template.Cpu), resource.DecimalSI)
 	node.Status.Capacity[apiv1.ResourceMemory] = *resource.NewQuantity(int64(template.Mem*1024*1024*1024), resource.DecimalSI)
+
+	if template.Gpu > 0 {
+		node.Status.Capacity[gpu.ResourceNvidiaGPU] = *resource.NewQuantity(int64(template.Gpu), resource.DecimalSI)
+		log.Infof("Capacity resource set gpu %s(%d)",gpu.ResourceNvidiaGPU,template.Gpu)
+	}
 
 	// TODO: use proper allocatable!!
 	node.Status.Allocatable = node.Status.Capacity

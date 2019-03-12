@@ -18,14 +18,15 @@ package qcloud
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"regexp"
 	"strings"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
-	apiv1 "k8s.io/api/core/v1"
 
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
@@ -108,8 +109,33 @@ func (qcloud *qcloudCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprov
 	if err != nil {
 		return nil, err
 	}
+
 	asg, err := qcloud.qcloudManager.GetAsgForInstance(ref)
-	return asg, err
+
+	if err != nil {
+		glog.Errorf("Instance %s , node(%s) to found asg err:%s ", ref.Name, node.Name,err.Error())
+		return asg, err
+	}
+
+	if asg == nil{
+		glog.V(4).Infof("Instance %s , node(%s) is not found in any asg", ref.Name, node.Name)
+		return asg, err
+	}
+
+	var bFound = false
+	for key,value := range node.Labels {
+         if key == LABEL_AUTO_SCALING_GROUP_ID {
+			 glog.V(4).Infof("Instance %s , node(%s) found label(%s)-asg(%s)", ref.Name, node.Name,key,value)
+			 bFound = true
+		 }
+	}
+
+	if !bFound{
+		glog.V(4).Infof("Instance %s , node(%s) not found label(%s)", ref.Name, node.Name,LABEL_AUTO_SCALING_GROUP_ID)
+		return nil,nil
+	}
+
+	return asg, nil
 }
 
 // Pricing returns pricing model for this cloud provider or error if not available.

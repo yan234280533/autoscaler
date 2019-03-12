@@ -19,6 +19,9 @@ package qcloud
 import (
 	"errors"
 	"fmt"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
+	"os"
+	"strconv"
 
 	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
@@ -35,20 +38,33 @@ const (
 	maxRecordsReturnedByAPI = 100
 )
 
-func (m autoScalingWrapper) getInstanceTypeByLCName(name string) (int, int, error) {
+func (m autoScalingWrapper) getInstanceTypeByLCName(name string) (int, int, int,error) {
 	params := &autoscaling.DescribeScalingConfigurationArgs{
 		ScalingConfigurationIds:[]string{name},
 	}
 	launchConfigurations, err := m.Client.DescribeScalingConfiguration(params)
 	if err != nil {
 		glog.V(4).Infof("Failed LaunchConfiguration info request for %s: %v", name, err)
-		return 0, 0, err
+		return 0, 0, 0,err
 	}
 	if len(launchConfigurations.Data.ScalingConfigurationSet) < 1 {
-		return 0, 0, fmt.Errorf("Unable to get first LaunchConfiguration for %s", name)
+		return 0, 0, 0,fmt.Errorf("Unable to get first LaunchConfiguration for %s", name)
 	}
 
-	return launchConfigurations.Data.ScalingConfigurationSet[0].Cpu, launchConfigurations.Data.ScalingConfigurationSet[0].Mem, nil
+	gpuStr := os.Getenv(launchConfigurations.Data.ScalingConfigurationSet[0].Type)
+	var gpu = 0
+	if gpuStr != "" {
+		num, err := strconv.Atoi(gpuStr)
+		if err == nil {
+			gpu = num
+		}else{
+			glog.Warningf("transfer gpu string is failed, err %s,gpuStr %s",err.Error(),gpuStr)
+		}
+	}
+
+	log.Infof("get gpu number (%d),gpuStr %s, type: %v",gpu,gpuStr,launchConfigurations.Data.ScalingConfigurationSet[0].Type)
+
+	return launchConfigurations.Data.ScalingConfigurationSet[0].Cpu, launchConfigurations.Data.ScalingConfigurationSet[0].Mem,gpu, nil
 }
 
 func (m autoScalingWrapper) getAutoscalingGroupByName(name string) (*autoscaling.ScalingGroup, error) {
