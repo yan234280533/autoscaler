@@ -196,7 +196,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	fixedSomething, err := fixNodeGroupSize(autoscalingContext, a.clusterStateRegistry, currentTime)
 	if err != nil {
 		glog.Errorf("Failed to fix node group sizes: %v", err)
-		return errors.ToAutoscalerError(errors.CloudProviderError, err)
+		//return errors.ToAutoscalerError(errors.CloudProviderError, err)
 	}
 	if fixedSomething {
 		glog.V(0).Infof("Some node group target size was fixed, skipping the iteration")

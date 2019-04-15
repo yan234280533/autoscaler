@@ -793,6 +793,46 @@ func getEmptyNodes(candidates []*apiv1.Node, pods []*apiv1.Pod, maxEmptyBulkDele
 
 func (sd *ScaleDown) scheduleDeleteEmptyNodes(emptyNodes []*apiv1.Node, client kube_client.Interface,
 	recorder kube_record.EventRecorder, readinessMap map[string]bool,
+	candidateNodeGroups map[string]cloudprovider.NodeGroup, confirmation chan errors.AutoscalerError)  {
+
+	for _, item := range emptyNodes {
+		taintErr := deletetaint.MarkToBeDeleted(item, client)
+		if taintErr != nil {
+			recorder.Eventf(item, apiv1.EventTypeWarning, "ScaleDownFailed", "failed to mark the node as toBeDeleted/unschedulable: %v", taintErr)
+			/*			confirmation <- errors.ToAutoscalerError(errors.ApiCallError, taintErr)
+						return*/
+		}
+	}
+	deleteErrs := deleteNodeFromCloudProviderByAsg(emptyNodes, sd.context.CloudProvider,
+		sd.context.Recorder, sd.clusterStateRegistry)
+
+	for _, item := range emptyNodes {
+		if deleteErrs[item] == nil {
+			glog.V(0).Infof("Scale-down: removing empty node %s", item.Name)
+			sd.context.LogRecorder.Eventf(apiv1.EventTypeNormal,
+				"ScaleDownEmpty", "Scale-down: removing empty node %s", item.Name)
+			simulator.RemoveNodeFromTracker(sd.usageTracker, item.Name, sd.unneededNodes)
+
+			/*			err := sd.context.ClientSet.Core().Nodes().Delete(item.Name, &metav1.DeleteOptions{})
+						if err != nil {
+							glog.Errorf("Failed to delete node %s/%s, err:%#v", item.Namespace, item.Name, err)
+						}*/
+
+			if readinessMap[item.Name] {
+				metrics.RegisterScaleDown(1,"", metrics.Empty)
+			} else {
+				metrics.RegisterScaleDown(1, "",metrics.Unready)
+			}
+		} else {
+			deletetaint.CleanToBeDeleted(item, client)
+			recorder.Eventf(item, apiv1.EventTypeWarning, "ScaleDownFailed", "failed to delete empty node: %v", deleteErrs[item])
+		}
+		confirmation <- deleteErrs[item]
+	}
+}
+
+/*func (sd *ScaleDown) scheduleDeleteEmptyNodes(emptyNodes []*apiv1.Node, client kube_client.Interface,
+	recorder kube_record.EventRecorder, readinessMap map[string]bool,
 	candidateNodeGroups map[string]cloudprovider.NodeGroup, confirmation chan errors.AutoscalerError) {
 	for _, node := range emptyNodes {
 		glog.V(0).Infof("Scale-down: removing empty node %s", node.Name)
@@ -830,7 +870,7 @@ func (sd *ScaleDown) scheduleDeleteEmptyNodes(emptyNodes []*apiv1.Node, client k
 			confirmation <- deleteErr
 		}(node)
 	}
-}
+}*/
 
 func (sd *ScaleDown) waitForEmptyNodesDeleted(emptyNodes []*apiv1.Node, confirmation chan errors.AutoscalerError) errors.AutoscalerError {
 	var finalError errors.AutoscalerError
@@ -1028,6 +1068,60 @@ func deleteNodeFromCloudProvider(node *apiv1.Node, cloudProvider cloudprovider.C
 		ExpectedDeleteTime: time.Now().Add(MaxCloudProviderNodeDeletionTime),
 	})
 	return nil
+}
+
+func deleteNodeFromCloudProviderByAsg(nodes []*apiv1.Node, cloudProvider cloudprovider.CloudProvider,
+	recorder kube_record.EventRecorder, registry *clusterstate.ClusterStateRegistry) map[*apiv1.Node]errors.AutoscalerError {
+	errs := make(map[*apiv1.Node]errors.AutoscalerError)
+	for _, node := range nodes {
+		errs[node] = nil
+	}
+
+	mGroup2Nodes := make(map[cloudprovider.NodeGroup][]*apiv1.Node)
+	for _, node := range nodes {
+		nodeGroup, err := cloudProvider.NodeGroupForNode(node)
+		if err != nil {
+			errs[node] = errors.NewAutoscalerError(
+				errors.CloudProviderError, "failed to find node group for %s: %v", node.Name, err)
+			return errs
+		}
+
+		if nodeGroup == nil || reflect.ValueOf(nodeGroup).IsNil() {
+			errs[node] = errors.NewAutoscalerError(
+				errors.InternalError, "picked node that doesn't belong to a node group: %s", node.Name)
+			return  errs
+		}
+
+		gNodes, ok := mGroup2Nodes[nodeGroup]
+		if ok {
+			mGroup2Nodes[nodeGroup] = append(gNodes, node)
+		}else {
+			mGroup2Nodes[nodeGroup] = []*apiv1.Node{node}
+		}
+	}
+
+	for key, val := range mGroup2Nodes {
+		glog.V(1).Infof("asg:%s, node:%#v", key.Id(), val)
+		if err := key.DeleteNodes(val); err != nil {
+			for _, node := range val {
+				asErr := errors.NewAutoscalerError(
+					errors.CloudProviderError, "failed to delete %s: %v", node.Name, err)
+				errs[node] = asErr
+			}
+		}else {
+			for _, node := range val {
+				recorder.Eventf(node, apiv1.EventTypeNormal, "ScaleDown", "node removed by cluster autoscaler")
+				registry.RegisterScaleDown(&clusterstate.ScaleDownRequest{
+					NodeGroupName:      key.Id(),
+					NodeName:           node.Name,
+					Time:               time.Now(),
+					ExpectedDeleteTime: time.Now().Add(MaxCloudProviderNodeDeletionTime),
+				})
+			}
+		}
+	}
+
+	return errs
 }
 
 func hasNoScaleDownAnnotation(node *apiv1.Node) bool {
