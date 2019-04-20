@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package qcloud
 
 import (
@@ -22,6 +21,7 @@ import (
 	"io"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
+	"os"
 	"time"
 
 	"cloud.tencent.com/tencent-cloudprovider/credential"
@@ -52,9 +52,9 @@ type QcloudManager struct {
 }
 
 type Config struct {
-	Region string `json:"region"`
-	Zone   string `json:"zone"`
-	ClusterId   string
+	Region    string `json:"region"`
+	Zone      string `json:"zone"`
+	ClusterId string
 }
 
 const (
@@ -74,16 +74,30 @@ func readConfig(cfg io.Reader) error {
 		return err
 	}
 
-	clsinfo, err := ini.Load("/etc/kubernetes/config")
-	if err != nil {
-		return err
-	}
+	//在metacluster托管集群里面没有/etc/kubernetes/config这个配置文件
+	//需要从CLUSTER_ID这个环境变量读取clusterId
+	//在独立集群里面原始版本为从/etc/kubernetes/config读取ClusterId
+	//但独立集群里面错误的把CLUSTER_ID这个环境变量设置成了kube-system
+	//所以这里排除clusterIdEnv为空的情况，也要排除clusterIdEnv为kube-system的情况
+	//最终逐步切换到所有集群都从CLUSTER_ID这个环境变量读取clusterId信息
+	clusterIdEnv := os.Getenv("CLUSTER_ID")
+	if (clusterIdEnv != "") && (clusterIdEnv != "kube-system") {
+		config.ClusterId = clusterIdEnv
+		glog.Infof("read clusterId from env ,clusterId : %s", config.ClusterId)
+	} else {
+		clsinfo, err := ini.Load("/etc/kubernetes/config")
+		if err != nil {
+			glog.Errorf("read clusterId from /etc/kubernetes/config failed, %s", err.Error())
+			return err
+		}
 
-	section := clsinfo.Section("")
-	if !section.Haskey("KUBE_CLUSTER") {
-		return fmt.Errorf("KUBE_CLUSTER not found")
+		section := clsinfo.Section("")
+		if !section.Haskey("KUBE_CLUSTER") {
+			return fmt.Errorf("KUBE_CLUSTER not found")
+		}
+		config.ClusterId = section.Key("KUBE_CLUSTER").String()
+		glog.Infof("read clusterId from /etc/kubernetes/config ,clusterId : %s", config.ClusterId)
 	}
-	config.ClusterId = section.Key("KUBE_CLUSTER").String()
 
 	return nil
 }
@@ -105,7 +119,7 @@ func CreateQcloudManager(configReader io.Reader) (*QcloudManager, error) {
 		return nil, err
 	}
 
-	normCredential, err := credential.NewNormCredential(time.Second * 3600, refresher)
+	normCredential, err := credential.NewNormCredential(time.Second*3600, refresher)
 	if err != nil {
 		glog.Errorf("NewNormCredential error")
 		return nil, err
@@ -124,8 +138,8 @@ func CreateQcloudManager(configReader io.Reader) (*QcloudManager, error) {
 	}
 
 	service := autoScalingWrapper{
-		Client:cli,
-		CcsClient:ccsCli,
+		Client:    cli,
+		CcsClient: ccsCli,
 	}
 	manager := &QcloudManager{
 		asgs:    newAutoScalingGroups(service),
@@ -144,8 +158,6 @@ func (m *QcloudManager) RegisterAsg(asg *Asg) {
 func (m *QcloudManager) GetAsgForInstance(instance *QcloudRef) (*Asg, error) {
 	return m.asgs.FindForInstance(instance)
 }
-
-
 
 // GetAsgSize gets ASG size.
 func (m *QcloudManager) GetAsgSize(asgConfig *Asg) (int64, error) {
@@ -168,8 +180,8 @@ func (m *QcloudManager) GetAsgSize(asgConfig *Asg) (int64, error) {
 // SetAsgSize sets ASG size.
 func (m *QcloudManager) SetAsgSize(asg *Asg, size int64) error {
 	params := &autoscaling.ModifyScalingGroupArgs{
-		ScalingGroupId: asg.Name,
-		DesiredCapacity:size,
+		ScalingGroupId:  asg.Name,
+		DesiredCapacity: size,
 	}
 	glog.V(0).Infof("Setting asg %s size to %d", asg.Id(), size)
 	_, err := m.service.Client.ModifyScalingGroup(params)
@@ -207,9 +219,9 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	}
 
 	params := &autoscaling.DetachInstanceArgs{
-		ScalingGroupId:commonAsg.Name,
-		InstanceIds:ins,
-		KeepInstance:1,
+		ScalingGroupId: commonAsg.Name,
+		InstanceIds:    ins,
+		KeepInstance:   1,
 	}
 	resp, err := m.service.Client.DetachInstance(params)
 	if err != nil {
@@ -224,7 +236,7 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	}
 
 	//ccs delete node
-	delNodePara := ccs.DeleteClusterInstancesReq{ClusterId:config.ClusterId, InstanceIds:ins}
+	delNodePara := ccs.DeleteClusterInstancesReq{ClusterId: config.ClusterId, InstanceIds: ins}
 	err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
 	if err != nil {
 		return err
@@ -304,7 +316,7 @@ func (m *QcloudManager) GetAsgNodes(asg *Asg) ([]string, error) {
 			continue
 		}
 		result = append(result, instance.InstanceId)
-			//fmt.Sprintf("qcloud:///%s/%s", config.Zone, instance.InstanceId))
+		//fmt.Sprintf("qcloud:///%s/%s", config.Zone, instance.InstanceId))
 	}
 	return result, nil
 }
@@ -325,7 +337,7 @@ func (m *QcloudManager) getAsgTemplate(name string) (*asgTemplate, error) {
 		return nil, err
 	}
 
-	cpu, mem, gpu,err := m.service.getInstanceTypeByLCName(asg.ScalingConfigurationId)
+	cpu, mem, gpu, err := m.service.getInstanceTypeByLCName(asg.ScalingConfigurationId)
 	if err != nil {
 		return nil, err
 	}
@@ -347,15 +359,14 @@ func (m *QcloudManager) getAsgTemplate(name string) (*asgTemplate, error) {
 		glog.Warningf("Found multiple availability zones, using %s\n", az)
 	}
 
-
 	return &asgTemplate{
 		InstanceType: "QCLOUD",
 		Region:       config.Region,
 		Zone:         az,
-		Cpu:cpu,
-		Mem:mem,
-		Gpu:gpu,
-		Label:asgLabel.Label,
+		Cpu:          cpu,
+		Mem:          mem,
+		Gpu:          gpu,
+		Label:        asgLabel.Label,
 	}, nil
 }
 
@@ -380,7 +391,7 @@ func (m *QcloudManager) buildNodeFromTemplate(asg *Asg, template *asgTemplate) (
 
 	if template.Gpu > 0 {
 		node.Status.Capacity[gpu.ResourceNvidiaGPU] = *resource.NewQuantity(int64(template.Gpu), resource.DecimalSI)
-		log.Infof("Capacity resource set gpu %s(%d)",gpu.ResourceNvidiaGPU,template.Gpu)
+		log.Infof("Capacity resource set gpu %s(%d)", gpu.ResourceNvidiaGPU, template.Gpu)
 	}
 
 	// TODO: use proper allocatable!!
