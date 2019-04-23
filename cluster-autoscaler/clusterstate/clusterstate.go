@@ -876,9 +876,14 @@ func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProvider cloudprovider.C
 	registered := sets.NewString()
 	for _, node := range allNodes {
 		if cloudProvider.Name() == "qcloud" {
-			insId := strings.Split(node.Spec.ProviderID, "/")[4]
-			registered.Insert(insId)
-		}else {
+			insIdArray := strings.Split(node.Spec.ProviderID, "/")
+			if len(insIdArray) > 4 {
+				registered.Insert(insIdArray[4])
+			} else {
+				glog.Warningf("qcloud cloudProvider ,ProviderID %s", node.Spec.ProviderID)
+				registered.Insert(node.Spec.ProviderID)
+			}
+		} else {
 			registered.Insert(node.Spec.ProviderID)
 		}
 	}
