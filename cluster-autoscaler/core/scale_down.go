@@ -403,11 +403,10 @@ func (sd *ScaleDown) UpdateUnneededNodes(
 		glog.V(4).Infof("Node %s - utilization %f", node.Name, utilization)
 		utilizationMap[node.Name] = utilization
 
-
-		if (math.Abs(utilization)< math.SmallestNonzeroFloat32) && (math.Abs(sd.context.ScaleDownUtilizationThreshold)< math.SmallestNonzeroFloat32){
+		if (math.Abs(utilization) < math.SmallestNonzeroFloat32) && (math.Abs(sd.context.ScaleDownUtilizationThreshold) < math.SmallestNonzeroFloat32) {
 			glog.V(4).Infof("Node %s is suitable for removal - utilization (%f) equal zero and scaleDownUtilizationThreshold (%f) equal zero",
-				node.Name, utilization,sd.context.ScaleDownUtilizationThreshold)
-		}else{
+				node.Name, utilization, sd.context.ScaleDownUtilizationThreshold)
+		} else {
 			if utilization >= sd.context.ScaleDownUtilizationThreshold {
 				glog.V(4).Infof("Node1 %s is not suitable for removal - utilization too big (%f)", node.Name, utilization)
 				continue
@@ -793,7 +792,7 @@ func getEmptyNodes(candidates []*apiv1.Node, pods []*apiv1.Pod, maxEmptyBulkDele
 
 func (sd *ScaleDown) scheduleDeleteEmptyNodes(emptyNodes []*apiv1.Node, client kube_client.Interface,
 	recorder kube_record.EventRecorder, readinessMap map[string]bool,
-	candidateNodeGroups map[string]cloudprovider.NodeGroup, confirmation chan errors.AutoscalerError)  {
+	candidateNodeGroups map[string]cloudprovider.NodeGroup, confirmation chan errors.AutoscalerError) {
 
 	for _, item := range emptyNodes {
 		taintErr := deletetaint.MarkToBeDeleted(item, client)
@@ -819,9 +818,9 @@ func (sd *ScaleDown) scheduleDeleteEmptyNodes(emptyNodes []*apiv1.Node, client k
 						}*/
 
 			if readinessMap[item.Name] {
-				metrics.RegisterScaleDown(1,"", metrics.Empty)
+				metrics.RegisterScaleDown(1, "", metrics.Empty)
 			} else {
-				metrics.RegisterScaleDown(1, "",metrics.Unready)
+				metrics.RegisterScaleDown(1, "", metrics.Unready)
 			}
 		} else {
 			deletetaint.CleanToBeDeleted(item, client)
@@ -901,7 +900,8 @@ func (sd *ScaleDown) deleteNode(node *apiv1.Node, pods []*apiv1.Pod) errors.Auto
 
 	if err := deletetaint.MarkToBeDeleted(node, sd.context.ClientSet); err != nil {
 		sd.context.Recorder.Eventf(node, apiv1.EventTypeWarning, "ScaleDownFailed", "failed to mark the node as toBeDeleted/unschedulable: %v", err)
-		return errors.ToAutoscalerError(errors.ApiCallError, err)
+		//return errors.ToAutoscalerError(errors.ApiCallError, err)
+		glog.Errorf("MarkToBeDeleted failed continue")
 	}
 
 	// If we fail to evict all the pods from the node we want to remove delete taint
@@ -920,7 +920,8 @@ func (sd *ScaleDown) deleteNode(node *apiv1.Node, pods []*apiv1.Pod) errors.Auto
 
 	// attempt drain
 	if err := drainNode(node, pods, sd.context.ClientSet, sd.context.Recorder, sd.context.MaxGracefulTerminationSec, MaxPodEvictionTime, EvictionRetryTime); err != nil {
-		return err
+		//return err
+		glog.Errorf("drainNode failed continue")
 	}
 	drainSuccessful = true
 
@@ -1089,13 +1090,13 @@ func deleteNodeFromCloudProviderByAsg(nodes []*apiv1.Node, cloudProvider cloudpr
 		if nodeGroup == nil || reflect.ValueOf(nodeGroup).IsNil() {
 			errs[node] = errors.NewAutoscalerError(
 				errors.InternalError, "picked node that doesn't belong to a node group: %s", node.Name)
-			return  errs
+			return errs
 		}
 
 		gNodes, ok := mGroup2Nodes[nodeGroup]
 		if ok {
 			mGroup2Nodes[nodeGroup] = append(gNodes, node)
-		}else {
+		} else {
 			mGroup2Nodes[nodeGroup] = []*apiv1.Node{node}
 		}
 	}
@@ -1108,7 +1109,7 @@ func deleteNodeFromCloudProviderByAsg(nodes []*apiv1.Node, cloudProvider cloudpr
 					errors.CloudProviderError, "failed to delete %s: %v", node.Name, err)
 				errs[node] = asErr
 			}
-		}else {
+		} else {
 			for _, node := range val {
 				recorder.Eventf(node, apiv1.EventTypeNormal, "ScaleDown", "node removed by cluster autoscaler")
 				registry.RegisterScaleDown(&clusterstate.ScaleDownRequest{
