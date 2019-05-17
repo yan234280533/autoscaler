@@ -40,6 +40,11 @@ import (
 	"math/rand"
 )
 
+const (
+	retryCountDetach   = 2
+	intervalTimeDetach = 5 * time.Second
+)
+
 type asgInformation struct {
 	config   *Asg
 	basename string
@@ -223,14 +228,32 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 		InstanceIds:    ins,
 		KeepInstance:   1,
 	}
-	resp, err := m.service.Client.DetachInstance(params)
-	if err != nil {
-		return err
+
+	var errOut error
+	var scalingActivityId string
+	for i := 0; i < retryCountDetach; i++ {
+		//从第二次开始，等待5s钟（一般autoscaling移出节点的时间为3s）
+		if i > 0 {
+			time.Sleep(intervalTimeDetach)
+		}
+		resp, err := m.service.Client.DetachInstance(params)
+		errOut = err
+
+		if err != nil {
+			continue
+		} else {
+			glog.V(4).Infof("res:%#v", resp.Response)
+			scalingActivityId = resp.Data.ScalingActivityId
+			break
+		}
 	}
-	glog.V(4).Infof("res:%#v", resp.Response)
+
+	if errOut != nil {
+		return errOut
+	}
 
 	//check activity
-	err = m.EnsureAS(commonAsg.Name, resp.Data.ScalingActivityId)
+	err = m.EnsureAS(commonAsg.Name, scalingActivityId)
 	if err != nil {
 		return err
 	}
