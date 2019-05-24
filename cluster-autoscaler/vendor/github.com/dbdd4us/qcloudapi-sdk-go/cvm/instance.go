@@ -88,6 +88,16 @@ type InstanceInfo struct {
 	ExpiredTime time.Time `json:"ExpiredTime"`
 }
 
+
+type ReturnInstanceArgs struct {
+	Version     string    `qcloud_arg:"Version,required"`
+	InstanceId  *string   `qcloud_arg:"instanceId"`
+}
+
+type ReturnInstanceResponse struct {
+	RequestID   string         `json:"RequestId"`
+}
+
 func (client *Client) DescribeInstances(args *DescribeInstancesArgs) (*DescribeInstancesResponse, error) {
 	realRsp := &DescribeInstancesResponse{}
 	cvmResponse := &CvmResponse{
@@ -97,5 +107,19 @@ func (client *Client) DescribeInstances(args *DescribeInstancesArgs) (*DescribeI
 	if err != nil {
 		return &DescribeInstancesResponse{}, err
 	}
+	return realRsp, nil
+}
+
+func (client *Client) ReturnInstance(args *ReturnInstanceArgs) (*ReturnInstanceResponse, error) {
+	realRsp := &ReturnInstanceResponse{}
+	cvmResponse := &CvmResponse{
+		Response: realRsp,
+	}
+
+	err := client.Invoke("ReturnInstance", args, cvmResponse)
+	if err != nil {
+		return &ReturnInstanceResponse{}, err
+	}
+
 	return realRsp, nil
 }

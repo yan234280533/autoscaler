@@ -21,6 +21,7 @@ import (
 	"github.com/golang/glog"
 	"regexp"
 	"strings"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -38,8 +39,8 @@ const (
 
 // qcloudCloudProvider implements CloudProvider interface.
 type qcloudCloudProvider struct {
-	qcloudManager *QcloudManager
-	asgs       []*Asg
+	qcloudManager   *QcloudManager
+	asgs            []*Asg
 	resourceLimiter *cloudprovider.ResourceLimiter
 }
 
@@ -52,12 +53,11 @@ func BuildQcloudCloudProvider(qcloudManager *QcloudManager, discoveryOpts cloudp
 	return nil, fmt.Errorf("Failed to build an qcloud cloud provider: Either node group specs or node group auto discovery spec must be specified")
 }
 
-
 func buildStaticallyDiscoveringProvider(qcloudManager *QcloudManager, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*qcloudCloudProvider, error) {
 	qcloud := &qcloudCloudProvider{
-		qcloudManager: qcloudManager,
-		asgs:       make([]*Asg, 0),
-		resourceLimiter:resourceLimiter,
+		qcloudManager:   qcloudManager,
+		asgs:            make([]*Asg, 0),
+		resourceLimiter: resourceLimiter,
 	}
 	for _, spec := range specs {
 		if err := qcloud.addNodeGroup(spec); err != nil {
@@ -113,26 +113,29 @@ func (qcloud *qcloudCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprov
 	asg, err := qcloud.qcloudManager.GetAsgForInstance(ref)
 
 	if err != nil {
-		glog.Errorf("Instance %s , node(%s) to found asg err:%s ", ref.Name, node.Name,err.Error())
+		glog.Errorf("Instance %s , node(%s) to found asg err:%s ", ref.Name, node.Name, err.Error())
 		return asg, err
 	}
 
-	if asg == nil{
+	if asg == nil {
 		glog.V(4).Infof("Instance %s , node(%s) is not found in any asg", ref.Name, node.Name)
 		return asg, err
 	}
 
-	var bFound = false
-	for key,value := range node.Labels {
-         if key == LABEL_AUTO_SCALING_GROUP_ID {
-			 glog.V(4).Infof("Instance %s , node(%s) found label(%s)-asg(%s)", ref.Name, node.Name,key,value)
-			 bFound = true
-		 }
-	}
+	//对于加入集群15分钟内的节点才进行label的判断
+	if node.CreationTimestamp.Add(15 * time.Minute).After(time.Now()) {
+		var bFound = false
+		for key, value := range node.Labels {
+			if key == LABEL_AUTO_SCALING_GROUP_ID {
+				glog.V(4).Infof("Instance %s , node(%s) found label(%s)-asg(%s)", ref.Name, node.Name, key, value)
+				bFound = true
+			}
+		}
 
-	if !bFound{
-		glog.V(4).Infof("Instance %s , node(%s) not found label(%s)", ref.Name, node.Name,LABEL_AUTO_SCALING_GROUP_ID)
-		return nil,nil
+		if !bFound {
+			glog.V(4).Infof("Instance %s , node(%s) not found label(%s)", ref.Name, node.Name, LABEL_AUTO_SCALING_GROUP_ID)
+			return nil, nil
+		}
 	}
 
 	return asg, nil
@@ -147,7 +150,6 @@ func (qcloud *qcloudCloudProvider) Pricing() (cloudprovider.PricingModel, errors
 func (qcloud *qcloudCloudProvider) GetAvailableMachineTypes() ([]string, error) {
 	return []string{}, nil
 }
-
 
 // NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 // created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
@@ -350,7 +352,6 @@ func (asg *Asg) TemplateNodeInfo() (*schedulercache.NodeInfo, error) {
 	return nodeInfo, nil
 }
 
-
 func buildAsgFromSpec(value string, qcloudManager *QcloudManager) (*Asg, error) {
 	spec, err := dynamic.SpecFromString(value, true)
 
@@ -366,8 +367,8 @@ func buildAsgFromSpec(value string, qcloudManager *QcloudManager) (*Asg, error) 
 func buildAsg(qcloudManager *QcloudManager, minSize int, maxSize int, name string) *Asg {
 	return &Asg{
 		qcloudManager: qcloudManager,
-		minSize:    minSize,
-		maxSize:    maxSize,
+		minSize:       minSize,
+		maxSize:       maxSize,
 		QcloudRef: QcloudRef{
 			Name: name,
 		},

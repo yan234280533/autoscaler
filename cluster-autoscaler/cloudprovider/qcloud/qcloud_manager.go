@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
 	"github.com/dbdd4us/qcloudapi-sdk-go/common"
+	"github.com/dbdd4us/qcloudapi-sdk-go/cvm"
 	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -142,9 +143,16 @@ func CreateQcloudManager(configReader io.Reader) (*QcloudManager, error) {
 		return nil, err
 	}
 
+	cvmCli, err := cvm.NewClient(&normCredential, common.Opts{Region: config.Region})
+	if err != nil {
+		glog.Errorf("qcloud cvm api client error")
+		return nil, err
+	}
+
 	service := autoScalingWrapper{
 		Client:    cli,
 		CcsClient: ccsCli,
+		CvmClient: cvmCli,
 	}
 	manager := &QcloudManager{
 		asgs:    newAutoScalingGroups(service),
@@ -262,10 +270,32 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	delNodePara := ccs.DeleteClusterInstancesReq{ClusterId: config.ClusterId, InstanceIds: ins}
 	err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
 	if err != nil {
+		log.Errorf("DeleteClusterInstances failed %s", err.Error())
+		m.ReturnCvmInstance(ins) //节点从伸缩组中删除后，需要尽量保证节点能被删除，否则会出现节点泄漏
 		return err
 	}
 
 	return nil
+}
+
+func (m *QcloudManager) ReturnCvmInstance(instanceIds []string) {
+
+	log.Infof("ReturnCvmInstance, &+v", instanceIds)
+
+	for key := range instanceIds {
+		request := cvm.ReturnInstanceArgs{}
+		request.InstanceId = &instanceIds[key]
+		response, err := m.service.CvmClient.ReturnInstance(&request)
+		if err != nil {
+			log.Errorf("ReturnInstance %s failed, err:%s", instanceIds[key], err.Error())
+			continue
+		} else if response == nil {
+			log.Errorf("ReturnInstance %s failed, response is empty", instanceIds[key])
+			continue
+		} else {
+			log.Infof("ReturnInstance %s  succeed", instanceIds[key])
+		}
+	}
 }
 
 func (m *QcloudManager) EnsureAS(scalingGroupId, scalingActivityId string) error {

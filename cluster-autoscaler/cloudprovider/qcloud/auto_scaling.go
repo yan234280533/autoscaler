@@ -19,36 +19,38 @@ package qcloud
 import (
 	"errors"
 	"fmt"
+	"github.com/dbdd4us/qcloudapi-sdk-go/cvm"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 	"os"
 	"strconv"
 
-	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
+	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/golang/glog"
 )
 
 // autoScalingWrapper provides several utility methods over the auto-scaling service provided by QCLOUD SDK
 type autoScalingWrapper struct {
-	Client *autoscaling.Client
+	Client    *autoscaling.Client
 	CcsClient *ccs.Client
+	CvmClient *cvm.Client
 }
 
 const (
 	maxRecordsReturnedByAPI = 100
 )
 
-func (m autoScalingWrapper) getInstanceTypeByLCName(name string) (int, int, int,error) {
+func (m autoScalingWrapper) getInstanceTypeByLCName(name string) (int, int, int, error) {
 	params := &autoscaling.DescribeScalingConfigurationArgs{
-		ScalingConfigurationIds:[]string{name},
+		ScalingConfigurationIds: []string{name},
 	}
 	launchConfigurations, err := m.Client.DescribeScalingConfiguration(params)
 	if err != nil {
 		glog.V(4).Infof("Failed LaunchConfiguration info request for %s: %v", name, err)
-		return 0, 0, 0,err
+		return 0, 0, 0, err
 	}
 	if len(launchConfigurations.Data.ScalingConfigurationSet) < 1 {
-		return 0, 0, 0,fmt.Errorf("Unable to get first LaunchConfiguration for %s", name)
+		return 0, 0, 0, fmt.Errorf("Unable to get first LaunchConfiguration for %s", name)
 	}
 
 	gpuStr := os.Getenv(launchConfigurations.Data.ScalingConfigurationSet[0].Type)
@@ -57,14 +59,14 @@ func (m autoScalingWrapper) getInstanceTypeByLCName(name string) (int, int, int,
 		num, err := strconv.Atoi(gpuStr)
 		if err == nil {
 			gpu = num
-		}else{
-			glog.Warningf("transfer gpu string is failed, err %s,gpuStr %s",err.Error(),gpuStr)
+		} else {
+			glog.Warningf("transfer gpu string is failed, err %s,gpuStr %s", err.Error(), gpuStr)
 		}
 	}
 
-	log.Infof("get gpu number (%d),gpuStr %s, type: %v",gpu,gpuStr,launchConfigurations.Data.ScalingConfigurationSet[0].Type)
+	log.Infof("get gpu number (%d),gpuStr %s, type: %v", gpu, gpuStr, launchConfigurations.Data.ScalingConfigurationSet[0].Type)
 
-	return launchConfigurations.Data.ScalingConfigurationSet[0].Cpu, launchConfigurations.Data.ScalingConfigurationSet[0].Mem,gpu, nil
+	return launchConfigurations.Data.ScalingConfigurationSet[0].Cpu, launchConfigurations.Data.ScalingConfigurationSet[0].Mem, gpu, nil
 }
 
 func (m autoScalingWrapper) getAutoscalingGroupByName(name string) (*autoscaling.ScalingGroup, error) {
@@ -112,12 +114,11 @@ func (m *autoScalingWrapper) getAutoscalingGroupsByNames(names []string) ([]auto
 	return description.Data.ScalingGroupSet, nil
 }
 
-
 func (m autoScalingWrapper) getAutoscalingInstance(name string) ([]autoscaling.ScalingInstance, error) {
 	params := &autoscaling.DescribeScalingInstanceArgs{
 		ScalingGroupId: name,
-		Offset:0,
-		Limit:maxRecordsReturnedByAPI,
+		Offset:         0,
+		Limit:          maxRecordsReturnedByAPI,
 	}
 	groups, err := m.Client.DescribeScalingInstance(params)
 	if err != nil {
@@ -129,18 +130,17 @@ func (m autoScalingWrapper) getAutoscalingInstance(name string) ([]autoscaling.S
 	for int(len(ins)) < groups.Data.TotalCount {
 		params := &autoscaling.DescribeScalingInstanceArgs{
 			ScalingGroupId: name,
-			Offset:int(len(ins)),
-			Limit:maxRecordsReturnedByAPI,
+			Offset:         int(len(ins)),
+			Limit:          maxRecordsReturnedByAPI,
 		}
 		groups, err = m.Client.DescribeScalingInstance(params)
 		if err != nil {
 			glog.V(4).Infof("Failed ASG info request for %s: %v", name, err)
 			return nil, err
-		}else {
+		} else {
 			ins = append(ins, groups.Data.ScalingInstancesSet...)
 		}
 	}
 
 	return ins, nil
 }
-
