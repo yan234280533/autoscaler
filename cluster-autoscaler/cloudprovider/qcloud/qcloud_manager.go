@@ -17,7 +17,12 @@ limitations under the License.
 package qcloud
 
 import (
+	"errors"
 	"fmt"
+	commonV3 "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	errorsV3 "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
+	profileV3 "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+	cvmV3 "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 	"io"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
@@ -29,6 +34,7 @@ import (
 	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
 	"github.com/dbdd4us/qcloudapi-sdk-go/common"
 	"github.com/dbdd4us/qcloudapi-sdk-go/cvm"
+
 	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -44,6 +50,9 @@ import (
 const (
 	retryCountDetach   = 2
 	intervalTimeDetach = 5 * time.Second
+
+	retryCountReturn   = 5
+	intervalTimeReturn = 5 * time.Second
 )
 
 type asgInformation struct {
@@ -58,14 +67,24 @@ type QcloudManager struct {
 }
 
 type Config struct {
-	Region    string `json:"region"`
-	Zone      string `json:"zone"`
-	ClusterId string
+	Region     string `json:"region"`
+	RegionName string `json:"regionName"`
+	Zone       string `json:"zone"`
+	ClusterId  string
 }
 
 const (
 	LABEL_AUTO_SCALING_GROUP_ID = "cloud.tencent.com/auto-scaling-group-id"
 )
+
+// StringPtrs returns an vector of string ponits
+func StringPtrs(ss []string) []*string {
+	var ssPtr []*string
+	for _, value := range ss {
+		ssPtr = append(ssPtr, &value)
+	}
+	return ssPtr
+}
 
 var config Config
 
@@ -104,6 +123,8 @@ func readConfig(cfg io.Reader) error {
 		config.ClusterId = section.Key("KUBE_CLUSTER").String()
 		glog.Infof("read clusterId from /etc/kubernetes/config ,clusterId : %s", config.ClusterId)
 	}
+
+	log.Infof("qcloud config %+v", config)
 
 	return nil
 }
@@ -150,10 +171,13 @@ func CreateQcloudManager(configReader io.Reader) (*QcloudManager, error) {
 	}
 
 	service := autoScalingWrapper{
-		Client:    cli,
-		CcsClient: ccsCli,
-		CvmClient: cvmCli,
+		Client:         cli,
+		CcsClient:      ccsCli,
+		CvmClient:      cvmCli,
+		NormCredential: &normCredential,
+		RegoinName:     config.RegionName,
 	}
+
 	manager := &QcloudManager{
 		asgs:    newAutoScalingGroups(service),
 		service: service,
@@ -271,7 +295,22 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 	err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
 	if err != nil {
 		log.Errorf("DeleteClusterInstances failed %s", err.Error())
-		m.ReturnCvmInstance(ins) //节点从伸缩组中删除后，需要尽量保证节点能被删除，否则会出现节点泄漏
+
+		//节点从伸缩组中删除后，需要尽量保证节点能被删除，否则会出现节点泄漏
+		for i := 0; i < retryCountReturn; i++ {
+			if i > 0 {
+				time.Sleep(intervalTimeReturn)
+			}
+
+			errCvm := m.ReturnCvmInstanceV3(ins)
+			if errCvm != nil {
+				log.Errorf("ReturnCvmInstanceV3 failed %s", errCvm.Error())
+				continue
+			} else {
+				log.Infof("ReturnCvmInstanceV3 succceed")
+				return nil
+			}
+		}
 		return err
 	}
 
@@ -280,7 +319,7 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 
 func (m *QcloudManager) ReturnCvmInstance(instanceIds []string) {
 
-	log.Infof("ReturnCvmInstance, &+v", instanceIds)
+	log.Infof("ReturnCvmInstance, &v", instanceIds)
 
 	for key := range instanceIds {
 		request := cvm.ReturnInstanceArgs{}
@@ -296,6 +335,64 @@ func (m *QcloudManager) ReturnCvmInstance(instanceIds []string) {
 			log.Infof("ReturnInstance %s  succeed", instanceIds[key])
 		}
 	}
+}
+
+func (m *QcloudManager) ReturnCvmInstanceV3(instanceIds []string) error {
+
+	log.Infof("ReturnCvmInstanceV3, &+v", instanceIds)
+
+	if m.service.NormCredential == nil {
+		return errors.New(fmt.Sprintf("NormCredential is nil"))
+	}
+
+	secretId, err := m.service.NormCredential.GetSecretId()
+	if err != nil {
+		return err
+	}
+
+	secretKey, err := m.service.NormCredential.GetSecretKey()
+	if err != nil {
+		return err
+	}
+
+	values, err := m.service.NormCredential.Values()
+	if err != nil {
+		return err
+	}
+
+	token, ok := values["Token"]
+	if !ok {
+		return errors.New("Get token failed")
+	}
+
+	regionName := m.service.RegoinName
+
+	credential := commonV3.NewTokenCredential(secretId, secretKey, token)
+
+	log.Infof("ReturnCvmInstanceV3 secretId %s, secretKey %s token: %s regionName %s ", secretId, secretKey, token, regionName)
+
+	cpf := profileV3.NewClientProfile()
+	cpf.HttpProfile.Endpoint = "cvm.tencentcloudapi.com"
+	client, _ := cvmV3.NewClient(credential, regionName, cpf)
+
+	request := cvmV3.NewTerminateInstancesRequest()
+
+	request.InstanceIds = StringPtrs(instanceIds)
+
+	log.Infof(request.ToJsonString())
+
+	response, err := client.TerminateInstances(request)
+	if _, ok := err.(*errorsV3.TencentCloudSDKError); ok {
+		return errors.New(fmt.Sprintf("An API error has returned: %s", err.Error()))
+	}
+
+	log.Infof(fmt.Sprintf("%s", response.ToJsonString()))
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (m *QcloudManager) EnsureAS(scalingGroupId, scalingActivityId string) error {

@@ -24,6 +24,7 @@ import (
 	"os"
 	"strconv"
 
+	"cloud.tencent.com/tencent-cloudprovider/credential"
 	"github.com/dbdd4us/qcloudapi-sdk-go/ccs"
 	autoscaling "github.com/dbdd4us/qcloudapi-sdk-go/scaling"
 	"github.com/golang/glog"
@@ -31,9 +32,11 @@ import (
 
 // autoScalingWrapper provides several utility methods over the auto-scaling service provided by QCLOUD SDK
 type autoScalingWrapper struct {
-	Client    *autoscaling.Client
-	CcsClient *ccs.Client
-	CvmClient *cvm.Client
+	Client         *autoscaling.Client
+	CcsClient      *ccs.Client
+	CvmClient      *cvm.Client
+	NormCredential *credential.NormCredential
+	RegoinName     string
 }
 
 const (
