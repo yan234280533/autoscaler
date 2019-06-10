@@ -311,6 +311,17 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 				return nil
 			}
 		}
+
+		//如果并行删除，则单个删除
+		for index := range ins {
+			errCvm := m.ReturnCvmInstanceV3([]string{ins[index]})
+			if errCvm != nil {
+				log.Errorf("ReturnCvmInstanceV3 single %s failed %s", ins[index], errCvm.Error())
+			} else {
+				log.Infof("ReturnCvmInstanceV3 single %s succceed", ins[index])
+			}
+		}
+
 		return err
 	}
 
