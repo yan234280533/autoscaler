@@ -318,11 +318,17 @@ func ScaleUp(context *context.AutoscalingContext, processors *ca_processors.Auto
 			if !clusterStateRegistry.IsNodeGroupHealthy(nodeGroup.Id()) {
 				glog.Warningf("Node group %s is not ready for scaleup - unhealthy", nodeGroup.Id())
 				skippedNodeGroups[nodeGroup.Id()] = notReadyReason
+				continue
 			} else {
-				glog.Warningf("Node group %s is not ready for scaleup - backoff", nodeGroup.Id())
-				skippedNodeGroups[nodeGroup.Id()] = backoffReason
+				if len(nodeGroups) > 1 {
+					glog.Warningf("Node group %s is not ready for scaleup - backoff", nodeGroup.Id())
+					skippedNodeGroups[nodeGroup.Id()] = backoffReason
+					continue
+				} else {
+					//to process scale-up
+					glog.Warningf("Node group %s is not ready for scaleup,- backoff(only one group to try)", nodeGroup.Id())
+				}
 			}
-			continue
 		}
 
 		currentTargetSize, err := nodeGroup.TargetSize()

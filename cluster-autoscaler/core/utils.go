@@ -463,8 +463,12 @@ func fixNodeGroupSize(context *context.AutoscalingContext, clusterStateRegistry 
 	for _, nodeGroup := range context.CloudProvider.NodeGroups() {
 		incorrectSize := clusterStateRegistry.GetIncorrectNodeGroupSize(nodeGroup.Id())
 		if incorrectSize == nil {
+			glog.Infof("asg %s incorrectSize is empty", nodeGroup.Id())
 			continue
+		} else {
+			glog.Infof("asg %s incorrectSize %v", nodeGroup.Id(), incorrectSize)
 		}
+
 		if incorrectSize.FirstObserved.Add(context.MaxNodeProvisionTime).Before(currentTime) {
 			delta := incorrectSize.CurrentSize - incorrectSize.ExpectedSize
 			if delta < 0 {

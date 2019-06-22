@@ -568,8 +568,10 @@ func (csr *ClusterStateRegistry) updateIncorrectNodeGroupSizes(currentTime time.
 			// if MinNodes == 0 node group has been scaled to 0 and everything's fine
 			if acceptableRange.MinNodes != 0 {
 				glog.Warningf("Readiness for node group %s not found", nodeGroup.Id())
+				glog.Warningf("readiness %+v", readiness)
 			}
-			continue
+			//continue
+			readiness = Readiness{}
 		}
 		if readiness.Registered > acceptableRange.MaxNodes ||
 			readiness.Registered < acceptableRange.MinNodes {
