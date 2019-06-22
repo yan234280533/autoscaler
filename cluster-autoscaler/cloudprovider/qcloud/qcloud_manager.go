@@ -81,7 +81,8 @@ const (
 func StringPtrs(ss []string) []*string {
 	var ssPtr []*string
 	for _, value := range ss {
-		ssPtr = append(ssPtr, &value)
+		var v = value
+		ssPtr = append(ssPtr, &v)
 	}
 	return ssPtr
 }
@@ -314,7 +315,7 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 			}
 		}
 
-		log.Infof("ReturnCvmInstanceV3 1 returnSucc is %v", returnSucc)
+		log.Infof("ReturnCvmInstanceV3 5 returnSucc is %v", returnSucc)
 
 		//如果并行删除，则单个删除
 		if !returnSucc {
