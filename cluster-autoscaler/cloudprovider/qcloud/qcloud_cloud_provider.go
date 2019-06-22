@@ -318,6 +318,8 @@ func (asg *Asg) DeleteNodes(nodes []*apiv1.Node) error {
 		}
 		refs = append(refs, qcloudref)
 	}
+
+	//TODO： CVM删除接口最大支持并行删除100，这里需要考虑分批处理
 	return asg.qcloudManager.DeleteInstances(refs)
 }
 

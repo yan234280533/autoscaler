@@ -64,23 +64,36 @@ func (client *Client) DescribeAsgLabel(scalingGroupId string) (*AsgLabelInfo, er
 type DeleteClusterInstancesReq struct {
 	ClusterId   string   `qcloud_arg:"clusterId"`
 	InstanceIds []string `qcloud_arg:"instanceIds"`
+	ForceDelete int     `qcloud_arg:"forceDelete"`
+}
+
+type DeleteClusterInstancesInfo struct {
+	RequestId           int   `json:"requestId"`
+	//SucInstanceIds      []string `json:"sucInstanceIds"`
+	//NotFoundInstanceIds []string `json:"notFoundInstanceIds"`
+	//FailedInstanceIds   []string `json:"failedInstanceIds"`
 }
 
 type DeleteClusterInstancesResponse struct {
 	Response
+	Data DeleteClusterInstancesInfo   `json:"data"`
 }
 
-func (client *Client) DeleteClusterInstances(req DeleteClusterInstancesReq) error {
+func (client *Client) DeleteClusterInstances(req DeleteClusterInstancesReq) (DeleteClusterInstancesResponse,error) {
 	response := &DeleteClusterInstancesResponse{}
 	err := client.Invoke("DeleteClusterInstances", req, response)
 	if err != nil {
-		return err
+		return DeleteClusterInstancesResponse{},err
+	}
+
+	if response == nil {
+		return DeleteClusterInstancesResponse{},errors.New("DeleteClusterInstances response empty error")
 	}
 
 	if response.Code != 0 {
-		return errors.New("DeleteClusterInstances ret code error")
+		return DeleteClusterInstancesResponse{},errors.New("DeleteClusterInstances ret code error")
 	}
 
-	return nil
+	return (*response),nil
 }
 

@@ -292,11 +292,12 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 
 	//ccs delete node
 	delNodePara := ccs.DeleteClusterInstancesReq{ClusterId: config.ClusterId, InstanceIds: ins}
-	err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
+	_, err = m.service.CcsClient.DeleteClusterInstances(delNodePara)
 	if err != nil {
 		log.Errorf("DeleteClusterInstances failed %s", err.Error())
 
 		//节点从伸缩组中删除后，需要尽量保证节点能被删除，否则会出现节点泄漏
+		var returnSucc bool = false
 		for i := 0; i < retryCountReturn; i++ {
 			if i > 0 {
 				time.Sleep(intervalTimeReturn)
@@ -308,21 +309,35 @@ func (m *QcloudManager) DeleteInstances(instances []*QcloudRef) error {
 				continue
 			} else {
 				log.Infof("ReturnCvmInstanceV3 succceed")
-				return nil
+				returnSucc = true
+				break
 			}
 		}
+
+		log.Infof("ReturnCvmInstanceV3 1 returnSucc is %v", returnSucc)
 
 		//如果并行删除，则单个删除
-		for index := range ins {
-			errCvm := m.ReturnCvmInstanceV3([]string{ins[index]})
-			if errCvm != nil {
-				log.Errorf("ReturnCvmInstanceV3 single %s failed %s", ins[index], errCvm.Error())
-			} else {
-				log.Infof("ReturnCvmInstanceV3 single %s succceed", ins[index])
+		if !returnSucc {
+			for index := range ins {
+				errCvm := m.ReturnCvmInstanceV3([]string{ins[index]})
+				if errCvm != nil {
+					log.Errorf("ReturnCvmInstanceV3 single %s failed %s", ins[index], errCvm.Error())
+				} else {
+					log.Infof("ReturnCvmInstanceV3 single %s succceed", ins[index])
+				}
 			}
 		}
 
-		return err
+		//调用CCS强制删除接口清理集群中的数据
+		delNodePara := ccs.DeleteClusterInstancesReq{ClusterId: config.ClusterId, InstanceIds: ins, ForceDelete: 1}
+		response, err := m.service.CcsClient.DeleteClusterInstances(delNodePara)
+		if err != nil {
+			log.Errorf("DeleteClusterInstances ForceDelete failed %s", err.Error())
+		} else {
+			log.Infof("DeleteClusterInstances ForceDelete response:%#v", response)
+		}
+
+		return nil
 	}
 
 	return nil
