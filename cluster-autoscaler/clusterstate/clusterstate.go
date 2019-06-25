@@ -18,6 +18,7 @@ package clusterstate
 
 import (
 	"fmt"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 	"reflect"
 	"sync"
 	"time"
@@ -293,6 +294,16 @@ func getTargetSizes(cp cloudprovider.CloudProvider) (map[string]int, error) {
 	return result, nil
 }
 
+// getMaxSizes gets max sizes of node groups.
+func getMaxSizes(cp cloudprovider.CloudProvider) map[string]int {
+	result := make(map[string]int)
+	for _, ng := range cp.NodeGroups() {
+		size := ng.MaxSize()
+		result[ng.Id()] = size
+	}
+	return result
+}
+
 // IsClusterHealthy returns true if the cluster health is within the acceptable limits
 func (csr *ClusterStateRegistry) IsClusterHealthy() bool {
 	csr.Lock()
@@ -300,8 +311,20 @@ func (csr *ClusterStateRegistry) IsClusterHealthy() bool {
 
 	totalUnready := csr.totalReadiness.Unready + csr.totalReadiness.LongNotStarted + csr.totalReadiness.LongUnregistered
 
+	var maxSize = 0
+	maxSizes := getMaxSizes(csr.cloudProvider)
+
+	for _, value := range maxSizes {
+		if value > maxSize {
+			maxSize = value
+		}
+	}
+
+	log.Infof("IsClusterHealthy maxSize %d", maxSize)
+
 	if totalUnready > csr.config.OkTotalUnreadyCount &&
-		float64(totalUnready) > csr.config.MaxTotalUnreadyPercentage/100.0*float64(len(csr.nodes)) {
+		float64(totalUnready) > csr.config.MaxTotalUnreadyPercentage/100.0*float64(len(csr.nodes)) &&
+		(float64(totalUnready) > csr.config.MaxTotalUnreadyPercentage/100.0*float64(maxSize)/2.0) {
 		return false
 	}
 
