@@ -19,6 +19,8 @@ package qcloud
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -320,7 +322,22 @@ func (asg *Asg) DeleteNodes(nodes []*apiv1.Node) error {
 	}
 
 	//TODO： CVM删除接口最大支持并行删除100，这里需要考虑分批处理
-	return asg.qcloudManager.DeleteInstances(refs)
+	if len(refs) < maxRecordsReturnedByAPI {
+		log.Infof("DeleteInstances len(%d)", len(refs))
+		return asg.qcloudManager.DeleteInstances(refs)
+	} else {
+		for i := 0; i < len(refs); i = i + maxRecordsReturnedByAPI {
+			log.Infof("page DeleteInstances i %d, len(%d)", i, len(refs))
+			idx := math.Min(float64(i+maxRecordsReturnedByAPI), float64(len(refs)))
+			err := asg.qcloudManager.DeleteInstances(refs[i:int(idx)])
+			if err != nil {
+				return err
+			}
+			time.Sleep(intervalTimeDetach)
+			log.Infof("page DeleteInstances i %d, len(%d) done", i, len(refs))
+		}
+		return nil
+	}
 }
 
 // Id returns asg id.
