@@ -31,6 +31,7 @@ type autoScalingGroups struct {
 	cacheMutex               sync.Mutex
 	instancesNotInManagedAsg map[QcloudRef]struct{}
 	service                  autoScalingWrapper
+	lastUpdateTime           time.Time
 }
 
 func newAutoScalingGroups(service autoScalingWrapper) *autoScalingGroups {
@@ -88,6 +89,14 @@ func (m *autoScalingGroups) FindForInstance(instance *QcloudRef) (*Asg, error) {
 }
 
 func (m *autoScalingGroups) regenerateCache() error {
+
+	now := time.Now()
+	if m.lastUpdateTime.Add(1 * time.Minute).After(time.Now()) {
+		glog.V(5).Infof("regenerateCache latest updateTime %s, now %s, return",
+			m.lastUpdateTime.Format("2006-01-02 15:04:05"), now.Format("2006-01-02 15:04:05"))
+		return nil
+	}
+
 	newCache := make(map[QcloudRef]*Asg)
 
 	for _, asg := range m.registeredAsgs {
@@ -104,5 +113,8 @@ func (m *autoScalingGroups) regenerateCache() error {
 	}
 
 	m.instanceToAsg = newCache
+	m.lastUpdateTime = time.Now()
+	glog.V(4).Infof("regenerateCache set latest updateTime %s", m.lastUpdateTime.Format("2006-01-02 15:04:05"))
+
 	return nil
 }
