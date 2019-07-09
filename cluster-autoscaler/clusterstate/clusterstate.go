@@ -18,7 +18,6 @@ package clusterstate
 
 import (
 	"fmt"
-	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 	"reflect"
 	"sync"
 	"time"
@@ -320,8 +319,6 @@ func (csr *ClusterStateRegistry) IsClusterHealthy() bool {
 		}
 	}
 
-	log.Infof("IsClusterHealthy maxSize %d", maxSize)
-
 	if totalUnready > csr.config.OkTotalUnreadyCount &&
 		float64(totalUnready) > csr.config.MaxTotalUnreadyPercentage/100.0*float64(len(csr.nodes)) &&
 		(float64(totalUnready) > csr.config.MaxTotalUnreadyPercentage/100.0*float64(maxSize)/2.0) {
@@ -568,13 +565,12 @@ func (csr *ClusterStateRegistry) updateIncorrectNodeGroupSizes(currentTime time.
 			// if MinNodes == 0 node group has been scaled to 0 and everything's fine
 			if acceptableRange.MinNodes != 0 {
 				glog.Warningf("Readiness for node group %s not found", nodeGroup.Id())
-				glog.Warningf("readiness %+v", readiness)
 			}
 			//continue
 			readiness = Readiness{}
 		}
 		if readiness.Registered > acceptableRange.MaxNodes ||
-			readiness.Registered < acceptableRange.MinNodes {
+			readiness.Registered < acceptableRange.CurrentTarget {
 			incorrect := IncorrectNodeGroupSize{
 				CurrentSize:   readiness.Registered,
 				ExpectedSize:  acceptableRange.CurrentTarget,
